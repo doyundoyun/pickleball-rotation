@@ -1,0 +1,19 @@
+{
+  "id": "/pickleball-rotation/",
+  "name": "피클볼 오픈플레이 로테이션",
+  "short_name": "로테이션",
+  "description": "복식 오픈플레이 대진을 공평하게 배정하고 점수와 순위를 기록합니다. 최대 12명, 지각·조퇴 자동 처리.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E7EAE4",
+  "theme_color": "#0C1F26",
+  "lang": "ko",
+  "dir": "ltr",
+  "categories": ["sports", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
