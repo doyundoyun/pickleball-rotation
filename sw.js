@@ -5,7 +5,7 @@
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com>
  * MIT License
  */
-const CACHE = "pb-v2.0.3";   // 배포마다 버전 올릴 것
+const CACHE = "pb-v2.0.4";   // 배포마다 버전 올릴 것
 const ASSETS = ["./", "./index.html", "./engine.js", "./manifest.json",
                 "./icons/icon-192.png", "./icons/icon-512.png"];
 

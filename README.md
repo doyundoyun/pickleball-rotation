@@ -2,7 +2,7 @@
 
 복식 오픈플레이 대진을 공평하게 배정하고 점수와 순위를 기록하는 오프라인 우선 PWA.
 
-- **사용하기**: https://doyundoyun.github.io/pickleball-rotation/
+- **사용하기**: https://mapia.duckdns.org
 - 아이폰: Safari에서 열고 공유 → **홈 화면에 추가**
 - 안드로이드: Chrome에서 열고 메뉴 → **앱 설치** (또는 APK 직접 설치)
 
