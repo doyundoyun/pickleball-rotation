@@ -1,5 +1,5 @@
 /*!
- * 피클볼 오픈플레이 로테이션 v2.0.0
+ * 피클볼 오픈플레이 로테이션 v2.1.0
  * 복식 오픈플레이 대진 배정 · 점수 기록 · 순위 집계
  *
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com>
@@ -13,6 +13,7 @@
  *   buildRound(session, rng?)      다음 라운드 1개 생성. session 을 변경하지 않는다 (SPEC §2.1, §2.2)
  *   commitRound(session, round)    라운드를 session.rounds 에 추가하고 history 를 증분 갱신한다.
  *                                  ※ session 을 **직접 변경(mutate)** 하며 같은 session 객체를 반환한다.
+ *   rebuildHistory(session)        rounds 전체로부터 history 를 처음부터 다시 만든다 (교체/재생성 후).
  *   rankPlayers(session)           SPEC §4.1 정렬 + 공동 등수(1,1,3) 배열 반환
  *   playerStats(session)           SPEC §1 파생 통계 { [playerId]: PlayerStat }
  *   validateScore(a, b, cfg)       SPEC §3.2 검증. 통과 시 null, 실패 시 한국어 문자열
@@ -233,22 +234,26 @@
    * 소규모(≤ FULL_ENUM_MAX)일 때 가능한 모든 배치를 비용과 함께 열거한다.
    * 전수 열거라야 마지막 라운드에서 유일하게 남은 해답을 놓치지 않는다.
    */
-  function enumerateArrangements(sel, courtCount, ctx) {
+  function enumerateArrangements(sel, courtCount, ctx, cleanLimit) {
     var m = sel.length;
     var out = [];
     var used = new Array(m).fill(false);
     var pairs = [];
+    var clean = 0;
+    var stop = false;
+    if (cleanLimit == null) cleanLimit = Infinity;
 
     function groupPairs() {
       var K = pairs.length;
       var usedP = new Array(K).fill(false);
       var games = [];
       (function rg(cost) {
+        if (stop) return;
         if (games.length === courtCount) {
-          out.push({
-            games: games.map(function (g) { return { A: g.A.slice(), B: g.B.slice() }; }),
-            cost: cost
-          });
+          var snap = games.map(function (g) { return { A: g.A.slice(), B: g.B.slice() }; });
+          var pr = partnerRepeatsOfGames(snap, ctx);
+          out.push({ games: snap, cost: cost, partnerRepeats: pr });
+          if (pr === 0 && ++clean >= cleanLimit) stop = true;
           return;
         }
         var i = 0;
@@ -268,6 +273,7 @@
     }
 
     (function rec() {
+      if (stop) return;
       if (pairs.length === m / 2) { groupPairs(); return; }
       var i = 0;
       while (used[i]) i++;
@@ -279,11 +285,11 @@
         rec();
         pairs.pop();
         used[j] = false;
+        if (stop) break;
       }
       used[i] = false;
     })();
 
-    out.forEach(function (o) { o.partnerRepeats = partnerRepeatsOfGames(o.games, ctx); });
     return out;
   }
 
@@ -399,9 +405,9 @@
 
   var MAX_SELECTIONS = 70;   // 한 라운드에서 검토할 선발 조합 수 상한
   var MAX_OPTIONS = 60;      // (선발 × 배치) 후보 검토 수 상한
-  var LOOKAHEAD_DEPTH = 3;
+  var topDepth = 3;          // 이번 buildRound 의 최상위 예측 깊이
   // 한 번의 buildRound 가 쓸 수 있는 예측 재귀 횟수 상한 (성능 예산 보호)
-  var WORK_BUDGET = 400;
+  var WORK_BUDGET = 200;
   var budget = WORK_BUDGET;
   // 인원이 많으면 미사용 파트너 조합이 넉넉해 막다른 길이 생기지 않고,
   // 라운드가 쌓이면 어차피 중복이 불가피하므로 예측 탐색을 끈다 (성능 예산 보호).
@@ -433,7 +439,12 @@
    */
   function buildRound(session, rng) {
     budget = WORK_BUDGET;
-    return buildRoundInternal(session, rng || Math.random, LOOKAHEAD_DEPTH).round;
+    var N = (session.rounds || []).length + 1;
+    var elig = session.players.filter(function (p) { return isEligible(p, N); }).length;
+    var courts = Math.min((session.config || {}).courts || 1, Math.floor(elig / 4));
+    // 코트가 1면이면 탐색 공간이 작아 깊게 보고, 여러 면이면 얕게 본다 (품질/속도 균형)
+    topDepth = elig > DEEP_LOOKAHEAD_MAX_PLAYERS ? 0 : (courts <= 1 ? 3 : 2);
+    return buildRoundInternal(session, rng || Math.random, topDepth).round;
   }
 
   /** 라운드 후보를 확정했다고 가정한 얕은 복제본 (1-ply 예측용). */
@@ -595,9 +606,12 @@
 
     /** 선발 조합 하나에 대한 배치 후보들 (비용 오름차순) */
     function arrangementsFor(sel) {
-      if (sel.length <= FULL_ENUM_MAX) {
-        var all = enumerateArrangements(sel, courts, ctx);
-        shuffleInPlace(all, rng);
+      // 예측의 말단(depth 0)에서는 "깨끗한 배치가 있는가"만 알면 되므로
+      // 전수 열거 대신 분기한정 탐색 1회로 끝낸다 (탐색 비용 대폭 절감).
+      if (sel.length <= FULL_ENUM_MAX && depth > 0) {
+        // 필요한 만큼(=이 레벨에서 검토할 후보 수)만 찾으면 열거를 멈춘다.
+        var limit = Math.max(3, optionCap - examined + 1);
+        var all = enumerateArrangements(shuffleInPlace(sel.slice(), rng), courts, ctx, limit);
         all.sort(function (a, b) { return a.cost - b.cost; });
         return all;
       }
@@ -635,7 +649,7 @@
     var bestAny = null;       // 그 외 최소 비용
     var examined = 0;
     // 깊이가 깊어질수록 후보 폭을 좁힌다 (탐색 폭발 방지)
-    var optionCap = Math.max(2, Math.round(MAX_OPTIONS / Math.pow(5, LOOKAHEAD_DEPTH - depth)));
+    var optionCap = Math.max(2, Math.round(MAX_OPTIONS / Math.pow(5, topDepth - depth)));
 
     var selections = enumerateSelections();
     outer:
@@ -704,6 +718,31 @@
     return session;
   }
 
+  /**
+   * rebuildHistory(session)
+   *  · session.rounds 전체를 훑어 history.partner / .opponent 를 처음부터 다시 만든다.
+   *  · 선수 교체(스왑)나 미확정 라운드 재생성처럼 라운드가 사후 변경된 뒤 호출한다.
+   *  · **session 을 mutate** 하고 같은 session 을 반환한다.
+   */
+  function rebuildHistory(session) {
+    var P = {}, O = {};
+    (session.rounds || []).forEach(function (r) {
+      (r.games || []).forEach(function (g) {
+        var a = g.teamA, b = g.teamB;
+        if (!a || !b) return;
+        var ka = pairKey(a[0], a[1]), kb = pairKey(b[0], b[1]);
+        P[ka] = (P[ka] || 0) + 1;
+        P[kb] = (P[kb] || 0) + 1;
+        for (var i = 0; i < 2; i++) for (var j = 0; j < 2; j++) {
+          var ko = pairKey(a[i], b[j]);
+          O[ko] = (O[ko] || 0) + 1;
+        }
+      });
+    });
+    session.history = { partner: P, opponent: O };
+    return session;
+  }
+
   /* ══════════════════════════════════════════════
      세션 생성 헬퍼 (테스트/UI 편의용)
      ══════════════════════════════════════════════ */
@@ -740,6 +779,7 @@
   return {
     buildRound: buildRound,
     commitRound: commitRound,
+    rebuildHistory: rebuildHistory,
     applyResult: commitRound,
     rankPlayers: rankPlayers,
     playerStats: playerStats,

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--!
- * 피클볼 오픈플레이 로테이션 v2.0.0
+ * 피클볼 오픈플레이 로테이션 v2.1.0
  * 복식 오픈플레이 대진 배정 · 점수 기록 · 순위 집계
  *
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com>
@@ -22,7 +22,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 /*!
- * 피클볼 오픈플레이 로테이션 v2.0.0
+ * 피클볼 오픈플레이 로테이션 v2.1.0
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com> · MIT License
  */
 :root{
@@ -386,6 +386,30 @@ footer.ft{
   font-size:11.5px;color:var(--dim);text-align:center;line-height:1.6;
   border-top:2px solid var(--rule);padding:14px 0 0;margin-top:22px;
 }
+/* ══ v2.1 선수 교체 (탭 → 스왑) ══ */
+.pname{
+  display:block;width:100%;min-height:44px;margin:0;padding:2px 4px;
+  background:transparent;border:2px solid transparent;color:inherit;text-align:left;
+  font-family:var(--display);font-weight:800;font-size:18px;line-height:1.2;
+  overflow-wrap:anywhere;cursor:pointer;
+}
+.side.b .pname{text-align:right}
+.pname[aria-pressed="true"]{border-color:var(--ball);background:rgba(223,255,79,.16)}
+.pname:disabled{cursor:default}
+.rest-tap{display:inline-flex;flex-wrap:wrap;gap:6px;vertical-align:middle}
+.rest-tap .pname{
+  display:inline-block;width:auto;min-width:44px;min-height:44px;padding:10px 12px;
+  font-family:var(--kr);font-weight:600;font-size:14px;line-height:1.2;
+  border-color:var(--rule);background:var(--line);color:var(--ink);text-align:center;
+}
+.rest-tap .pname[aria-pressed="true"]{border-color:var(--ink);background:var(--ball)}
+.swaphint{font-size:12px;color:var(--dim);margin:2px 0 14px;padding:0 2px}
+.rest.tapable{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+details.pr.fut summary{color:var(--dim)}
+details.pr.edit{border-color:var(--court)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.rwrap{display:flex;align-items:center;gap:10px}
+.rwrap .hint{margin:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:3px solid var(--court);outline-offset:2px}
 </style>
@@ -450,6 +474,18 @@ footer.ft{
             <button type="button" data-v="3" aria-pressed="false">3면</button>
           </div>
           <p class="hint" id="suCHint"></p>
+        </div>
+        <div class="field">
+          <div class="flabel"><span>총 라운드 수</span><b id="suRLabel">8라운드</b></div>
+          <div class="chips" id="suRChips"></div>
+          <div class="rwrap">
+            <div class="stepper">
+              <button type="button" id="rMinus" aria-label="라운드 한 개 줄이기">−</button>
+              <div class="val" id="rCount">8</div>
+              <button type="button" id="rPlus" aria-label="라운드 한 개 늘리기">+</button>
+            </div>
+            <p class="hint" id="suRHint"></p>
+          </div>
         </div>
         <div class="field">
           <div class="flabel"><span>승점</span><b id="suWLabel">11점</b></div>
@@ -532,7 +568,7 @@ footer.ft{
 <script src="engine.js"></script>
 <script>
 /*!
- * 피클볼 오픈플레이 로테이션 v2.0.0 — app
+ * 피클볼 오픈플레이 로테이션 v2.1.0 — app
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com> · MIT License
  */
 (function(){
@@ -556,6 +592,9 @@ var S = null;              // session
 var tab = "play";
 var suNames = ["","","","","","","",""];
 var suCfg = { courts:1, winPoint:11, winBy2:false, balanceWeight:0 };
+var MAXR = 20, MINR = 1;
+var suRounds = 0;          // 0 = 아직 손대지 않음 (인원/코트에 맞춰 자동 추천)
+var swapSel = null;        // { ri, pid } — 교체 대기 중인 선수
 
 /* ────────── storage ────────── */
 function save(){
@@ -690,14 +729,39 @@ function isActiveIn(p, roundNo){
 function activeCount(roundNo){
   return S.players.filter(function(p){ return isActiveIn(p, roundNo); }).length;
 }
+/* 라운드 상태
+ *  locked === true            완료 (읽기 전용)
+ *  editing === true           완료 후 "점수 수정"으로 다시 연 라운드
+ *  그 외                      미확정 (현재 라운드 + 미리 생성된 예정 라운드) */
+function isEditing(r){ return !r.locked && r.editing === true; }
+function isPending(r){ return !r.locked && r.editing !== true; }
+function curIndex(){
+  for(var i=0;i<S.rounds.length;i++) if(isPending(S.rounds[i])) return i;
+  return -1;
+}
 function curRound(){
-  var r = S.rounds[S.rounds.length - 1];
-  return (r && !r.locked) ? r : null;
+  var i = curIndex();
+  return i < 0 ? null : S.rounds[i];
 }
 function nextRoundNo(){
-  var r = S.rounds[S.rounds.length - 1];
-  if(!r) return 1;
-  return r.locked ? r.no + 1 : r.no;
+  var c = curRound();
+  if(c) return c.no;
+  var last = S.rounds[S.rounds.length - 1];
+  return last ? last.no + 1 : 1;
+}
+function gcd(a, b){ while(b){ var t = a % b; a = b; b = t; } return a; }
+/* 출전 수가 균등해지는 최소 라운드 수 (너무 짧으면 그 배수로 올린다) */
+function roundCycle(n, courts){
+  var per = Math.min(courts, Math.floor(n / 4)) * 4;
+  if(per <= 0) return 1;
+  var c = n / gcd(n, per);
+  while(c < 4 && c * 2 <= MAXR) c *= 2;
+  return Math.min(MAXR, c);
+}
+function roundChoices(n, courts){
+  var c = roundCycle(n, courts), out = [];
+  for(var k = 1; k * c <= MAXR && out.length < 5; k++) out.push(k * c);
+  return out;
 }
 function maxCourtsFor(roundNo){
   return Math.max(0, Math.floor(activeCount(roundNo) / 4));
@@ -740,6 +804,41 @@ function generateRound(){
     toast("라운드 생성 실패: " + (err && err.message ? err.message : "오류"));
     return false;
   }
+}
+
+/* 라운드 n개를 한 번에 미리 생성한다. 만들어진 개수를 반환. */
+function generateRounds(n){
+  var made = 0;
+  for(var i=0;i<n;i++){
+    if(!generateRound()) break;
+    made++;
+  }
+  return made;
+}
+
+/**
+ * 지각/조퇴/코트 변경 후: 아직 확정하지 않은 라운드를 모두 버리고
+ * 같은 개수만큼 다시 생성한다. 완료(locked)·수정 중(editing) 라운드는 건드리지 않는다.
+ */
+function touched(r){
+  return (r.games || []).some(function(g){
+    return !!g.skip || g.scoreA != null || g.scoreB != null;
+  });
+}
+function regenerateUnlocked(){
+  if(!engineReady()) return;
+  var target = S.rounds.length;
+  // 완료·수정 중 라운드와, 이미 점수를 입력하기 시작한 라운드까지는 그대로 둔다
+  var last = -1;
+  S.rounds.forEach(function(r, i){
+    if(r.locked || isEditing(r) || touched(r)) last = i;
+  });
+  var keep = S.rounds.slice(0, last + 1);
+  if(keep.length === target) return;
+  S.rounds = keep;
+  if(E.rebuildHistory) E.rebuildHistory(S);
+  generateRounds(target - keep.length);
+  save();
 }
 
 /* ══════════════════════════════════════════
@@ -793,11 +892,50 @@ function drawSetupCfg(){
   $("suCLabel").textContent = suCfg.courts + "면";
   $("suCHint").innerHTML = n + "명이면 최대 <b>" + mx + "코트</b>까지 동시에 쓸 수 있습니다 " +
     "(코트당 4명). 1라운드에 " + (suCfg.courts * 4) + "명 출전, " + (n - suCfg.courts * 4) + "명 대기.";
+  drawSetupRounds();
   segSet("suWin", suCfg.winPoint);
   $("suWLabel").textContent = suCfg.winPoint + "점";
   segSet("suBy2", suCfg.winBy2 ? "1" : "0");
   segSet("suBal", String(suCfg.balanceWeight));
 }
+
+/* 총 라운드 수: 추천 칩 + 1~20 스테퍼 */
+function suRoundValue(){
+  var c = roundCycle(suNames.length, suCfg.courts);
+  if(!suRounds) return c;
+  return Math.min(MAXR, Math.max(MINR, suRounds));
+}
+function drawSetupRounds(){
+  var n = suNames.length;
+  var v = suRoundValue();
+  var picks = roundChoices(n, suCfg.courts);
+  $("suRLabel").textContent = v + "라운드";
+  $("rCount").textContent = v;
+  $("rMinus").disabled = v <= MINR;
+  $("rPlus").disabled = v >= MAXR;
+  $("suRChips").innerHTML = picks.map(function(k){
+    return '<button type="button" class="chip alt" data-v="' + k +
+      '" aria-pressed="' + (k === v) + '">' + k + '라운드</button>';
+  }).join("");
+  var per = Math.min(suCfg.courts, Math.floor(n / 4)) * 4;
+  $("suRHint").innerHTML = "시작하면 " + v + "개 라운드를 미리 만듭니다. " +
+    "<b>" + picks[0] + "라운드</b> 단위면 " + n + "명의 출전 수가 균등해집니다" +
+    (per ? " (라운드당 " + per + "명 출전)" : "") + ".";
+}
+$("suRChips").addEventListener("click", function(e){
+  var b = e.target.closest("button[data-v]");
+  if(!b) return;
+  suRounds = +b.dataset.v;
+  drawSetupRounds();
+});
+$("rMinus").onclick = function(){
+  suRounds = Math.max(MINR, suRoundValue() - 1);
+  drawSetupRounds();
+};
+$("rPlus").onclick = function(){
+  suRounds = Math.min(MAXR, suRoundValue() + 1);
+  drawSetupRounds();
+};
 
 $("pMinus").onclick = function(){
   if(suNames.length > MINP){ suNames.pop(); drawRoster(); drawSetupCfg(); }
@@ -818,11 +956,14 @@ $("startBtn").onclick = function(){
     seen[nm] = 1; return nm;
   });
   if(names.length < MINP){ toast("최소 4명이 필요합니다"); return; }
+  var want = suRoundValue();
   S = makeSession(names, suCfg);
-  if(!generateRound()){ S = null; return; }
+  var made = generateRounds(want);
+  if(!made){ S = null; return; }
   tab = "play";
+  swapSel = null;
   showApp();
-  toast("세션을 시작했습니다");
+  toast(made + "개 라운드 대진을 만들었습니다");
 };
 
 /* ══════════════════════════════════════════
@@ -875,7 +1016,7 @@ function renderHeader(){
   var cur = curRound();
   if(cur){
     $("hdRound").textContent = "R" + cur.no;
-    $("hdSub").textContent = "진행중";
+    $("hdSub").textContent = "진행중 · 총 " + S.rounds.length;
   }else{
     var last = S.rounds[S.rounds.length - 1];
     $("hdRound").textContent = last ? "R" + last.no : "R0";
@@ -892,99 +1033,168 @@ function scoreChips(){
 }
 
 function renderPlay(){
-  var cur = curRound();
+  var pane = $("pane-play");
+  var open = openDetails(pane);
+  var ci = curIndex();
+  var cur = ci < 0 ? null : S.rounds[ci];
   var html = "";
 
   if(cur){
     html += '<div class="round-tag"><span>Round ' + cur.no + '</span><em>진행중</em></div>';
-    html += cur.games.map(function(g, i){ return courtHTML(g, i); }).join("");
-    var rest = (cur.resting || []).map(nameOf);
-    html += '<p class="rest"><b>대기</b>' + (rest.length ? esc(rest.join(" · ")) : "없음") + '</p>';
-    html += '<button class="go" id="finishBtn">라운드 완료 · 다음 라운드</button>';
+    html += roundBodyHTML(cur, ci);
+    html += '<p class="swaphint">선수 이름을 탭하면 서로 교체할 수 있습니다</p>';
+    html += '<button class="go" id="finishBtn">라운드 완료</button>';
   }else{
     var nn = nextRoundNo();
     var ac = activeCount(nn);
     html += '<div class="empty"><span class="big">' +
-      (ac < 4 ? "인원이 부족합니다" : "라운드 대기 중") + '</span>' +
+      (ac < 4 ? "인원이 부족합니다" : "모든 라운드를 마쳤습니다") + '</span>' +
       (ac < 4
         ? '참여 가능한 선수가 ' + ac + '명입니다. 복식 경기는 최소 4명이 필요합니다.<br>설정 탭에서 선수를 추가하거나 세션을 종료해 주세요.'
-        : '다음 라운드를 생성할 수 있습니다.') +
+        : '준비한 ' + S.rounds.length + '개 라운드를 모두 완료했습니다.<br>더 진행하려면 라운드를 추가하세요.') +
       '</div>';
     if(ac >= 4){
-      html += '<button class="go" id="newRoundBtn" style="margin-top:14px">' + nn + '라운드 생성</button>';
+      html += '<button class="go" id="addRoundBtn" style="margin-top:14px">라운드 추가 (+1)</button>';
     }
   }
 
-  var past = S.rounds.filter(function(r){ return r.locked; }).slice().reverse();
+  var fut = [];
+  S.rounds.forEach(function(r, i){ if(isPending(r) && i !== ci) fut.push(i); });
+  if(fut.length){
+    html += '<div class="past"><div class="round-tag"><span>예정 라운드</span><em>' +
+      fut.length + '개</em></div>' +
+      fut.map(function(i){ return futureHTML(S.rounds[i], i); }).join("") + '</div>';
+  }
+
+  var past = [];
+  S.rounds.forEach(function(r, i){ if(r.locked || isEditing(r)) past.push(i); });
+  past.reverse();
   if(past.length){
     html += '<div class="past"><div class="round-tag"><span>지난 라운드</span></div>' +
-      past.map(pastHTML).join("") + '</div>';
+      past.map(function(i){
+        var r = S.rounds[i];
+        return isEditing(r) ? editHTML(r, i) : pastHTML(r, i);
+      }).join("") + '</div>';
   }
 
   html += '<footer class="ft">점수를 모두 입력하면 라운드를 완료할 수 있습니다.<br>' +
-    '완료한 라운드는 수정할 수 없습니다.</footer>';
+    '완료한 라운드도 “점수 수정”으로 다시 열 수 있습니다.</footer>';
 
-  var pane = $("pane-play");
   pane.innerHTML = html;
+  restoreDetails(pane, open);
+
+  S.rounds.forEach(function(r, i){
+    if(r.locked) return;
+    r.games.forEach(function(g, gi){ syncGame(i, gi); });
+  });
 
   if(cur){
-    cur.games.forEach(function(g, i){ syncGame(i); });
     syncFinish();
     $("finishBtn").onclick = onFinish;
   }else{
-    var nb = $("newRoundBtn");
+    var nb = $("addRoundBtn");
     if(nb) nb.onclick = function(){
       if(!clampCourts(nextRoundNo())) return;
       if(generateRound()) render();
+      else toast("라운드를 생성할 수 없습니다");
     };
   }
 }
 
-function courtHTML(g, i){
-  var w = S.config.winPoint;
+/* <details> 펼침 상태를 라운드 번호 기준으로 보존한다 */
+function openDetails(pane){
+  var set = {};
+  pane.querySelectorAll("details[data-rno]").forEach(function(d){
+    if(d.open) set[d.dataset.rno] = true;
+  });
+  return set;
+}
+function restoreDetails(pane, set){
+  pane.querySelectorAll("details[data-rno]").forEach(function(d){
+    if(set[d.dataset.rno]) d.open = true;
+  });
+}
+
+/* 미확정 라운드 본문 (코트 카드 + 점수 UI + 대기 명단) */
+function roundBodyHTML(r, ri){
+  var rest = (r.resting || []);
+  return r.games.map(function(g, gi){ return courtHTML(r, ri, g, gi); }).join("") +
+    '<div class="rest tapable"><b>대기</b>' +
+    (rest.length
+      ? '<span class="rest-tap">' + rest.map(function(pid){ return nameHTML(r, ri, pid); }).join("") + '</span>'
+      : '없음') +
+    '</div>';
+}
+
+function futureHTML(r, ri){
+  return '<details class="pr fut" data-rno="' + r.no + '">' +
+    '<summary><span>ROUND ' + r.no + ' · 예정</span><span class="arw">▾</span></summary>' +
+    '<div class="pr-body">' + roundBodyHTML(r, ri) +
+    '<p class="swaphint" style="margin-bottom:0">선수 이름을 탭하면 서로 교체할 수 있습니다</p>' +
+    '</div></details>';
+}
+
+function editHTML(r, ri){
+  return '<details class="pr edit" data-rno="' + r.no + '" open>' +
+    '<summary><span>ROUND ' + r.no + ' · 수정 중</span><span class="arw">▾</span></summary>' +
+    '<div class="pr-body">' + roundBodyHTML(r, ri) +
+    '<p class="swaphint">선수 이름을 탭하면 서로 교체할 수 있습니다</p>' +
+    '<button type="button" class="btn full" data-act="editdone" data-r="' + ri + '">수정 완료</button>' +
+    '</div></details>';
+}
+
+function nameHTML(r, ri, pid){
+  var on = !!(swapSel && swapSel.ri === ri && swapSel.pid === pid);
+  return '<button type="button" class="pname" data-act="name" data-r="' + ri +
+    '" data-pid="' + esc(pid) + '"' + (r.locked ? " disabled" : "") +
+    ' aria-pressed="' + on + '">' + esc(nameOf(pid)) + '</button>';
+}
+
+function courtHTML(r, ri, g, i){
   var chips = scoreChips();
   return '' +
-  '<div class="court' + (g.skip ? " skip" : "") + '" data-g="' + i + '">' +
+  '<div class="court' + (g.skip ? " skip" : "") + '" data-r="' + ri + '" data-g="' + i + '">' +
     '<div class="court-no">COURT ' + (g.court || (i+1)) + '</div>' +
     (g.skip ? '<div class="court-flag">기록 안 함</div>' : '') +
     '<div class="teams">' +
       '<div class="side a" data-side="A">' +
-        '<p>' + esc(nameOf(g.teamA[0])) + '</p><p>' + esc(nameOf(g.teamA[1])) + '</p>' +
-        scHTML(i, "A", g.scoreA, g.skip) +
+        nameHTML(r, ri, g.teamA[0]) + nameHTML(r, ri, g.teamA[1]) +
+        scHTML(ri, i, "A", g.scoreA, g.skip) +
       '</div>' +
       '<div class="net"></div>' +
       '<div class="side b" data-side="B">' +
-        '<p>' + esc(nameOf(g.teamB[0])) + '</p><p>' + esc(nameOf(g.teamB[1])) + '</p>' +
-        scHTML(i, "B", g.scoreB, g.skip) +
+        nameHTML(r, ri, g.teamB[0]) + nameHTML(r, ri, g.teamB[1]) +
+        scHTML(ri, i, "B", g.scoreB, g.skip) +
       '</div>' +
     '</div>' +
   '</div>' +
   '<div class="gtools">' +
     chips.map(function(c){
-      return '<button type="button" class="chip" data-act="chip" data-g="' + i +
+      return '<button type="button" class="chip" data-act="chip" data-r="' + ri + '" data-g="' + i +
         '" data-a="' + c[0] + '" data-b="' + c[1] + '">' + c[0] + '-' + c[1] + '</button>';
     }).join("") +
-    '<button type="button" class="chip alt" data-act="swap" data-g="' + i + '" aria-label="좌우 점수 바꾸기">↔</button>' +
-    '<button type="button" class="chip alt" data-act="skip" data-g="' + i +
+    '<button type="button" class="chip alt" data-act="swap" data-r="' + ri + '" data-g="' + i +
+      '" aria-label="좌우 점수 바꾸기">↔</button>' +
+    '<button type="button" class="chip alt" data-act="skip" data-r="' + ri + '" data-g="' + i +
       '" aria-pressed="' + (g.skip ? "true" : "false") + '">기록 안 함</button>' +
   '</div>';
 }
 
-function scHTML(i, side, val, dis){
+function scHTML(ri, i, side, val, dis){
   var d = dis ? " disabled" : "";
   return '<div class="sc">' +
-    '<button type="button" data-act="dec" data-g="' + i + '" data-s="' + side +
+    '<button type="button" data-act="dec" data-r="' + ri + '" data-g="' + i + '" data-s="' + side +
       '" aria-label="점수 내리기"' + d + '>−</button>' +
     '<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="99" ' +
-      'data-g="' + i + '" data-s="' + side + '" placeholder="—" ' +
+      'data-r="' + ri + '" data-g="' + i + '" data-s="' + side + '" placeholder="—" ' +
       'aria-label="' + (side === "A" ? "왼쪽" : "오른쪽") + ' 팀 점수" ' +
       'value="' + (val == null ? "" : val) + '"' + d + '>' +
-    '<button type="button" data-act="inc" data-g="' + i + '" data-s="' + side +
+    '<button type="button" data-act="inc" data-r="' + ri + '" data-g="' + i + '" data-s="' + side +
       '" aria-label="점수 올리기"' + d + '>+</button>' +
   '</div>';
 }
 
-function pastHTML(r){
+function pastHTML(r, ri){
   var lines = r.games.map(function(g){
     if(g.status === "skipped" || (g.scoreA == null && g.scoreB == null)){
       return '<div class="pr-line"><span class="pr-c">C' + g.court + '</span>' +
@@ -998,9 +1208,12 @@ function pastHTML(r){
       '<span class="pr-t' + (bw ? " w" : "") + '" style="text-align:right">' + esc(teamNames(g.teamB)) + '</span></div>';
   }).join("");
   var rest = (r.resting || []).map(nameOf);
-  return '<details class="pr"><summary><span>ROUND ' + r.no + ' · 완료</span><span class="arw">▾</span></summary>' +
+  return '<details class="pr" data-rno="' + r.no + '">' +
+    '<summary><span>ROUND ' + r.no + ' · 완료</span><span class="arw">▾</span></summary>' +
     '<div class="pr-body">' + lines +
     (rest.length ? '<p class="pr-rest">대기: ' + esc(rest.join(" · ")) + '</p>' : "") +
+    '<button type="button" class="btn full" data-act="edit" data-r="' + ri +
+      '" style="margin-top:11px">점수 수정</button>' +
     '</div></details>';
 }
 
@@ -1008,11 +1221,18 @@ function pastHTML(r){
 $("pane-play").addEventListener("click", function(e){
   var b = e.target.closest("[data-act]");
   if(!b) return;
-  var cur = curRound();
-  if(!cur) return;
-  var i = +b.dataset.g, g = cur.games[i];
-  if(!g) return;
   var act = b.dataset.act;
+  var ri = +b.dataset.r;
+  var r = S.rounds[ri];
+  if(!r) return;
+
+  if(act === "name"){ onNameTap(ri, b.dataset.pid); return; }
+  if(act === "edit"){ unlockForEdit(ri); return; }
+  if(act === "editdone"){ onEditDone(ri); return; }
+  if(r.locked) return;
+
+  var i = +b.dataset.g, g = r.games[i];
+  if(!g) return;
 
   if(act === "inc" || act === "dec"){
     if(g.skip) return;
@@ -1032,47 +1252,52 @@ $("pane-play").addEventListener("click", function(e){
     save();
     renderPlay();
     return;
+  }else{
+    return;
   }
   save();
-  syncGame(i);
+  syncGame(ri, i);
   syncFinish();
 });
 
 $("pane-play").addEventListener("input", function(e){
   var inp = e.target;
   if(inp.tagName !== "INPUT" || inp.dataset.g == null) return;
-  var cur = curRound();
-  if(!cur) return;
-  var g = cur.games[+inp.dataset.g];
+  var r = S.rounds[+inp.dataset.r];
+  if(!r || r.locked) return;
+  var g = r.games[+inp.dataset.g];
   if(!g) return;
   var raw = inp.value.replace(/[^0-9]/g, "").slice(0, 2);
   if(raw !== inp.value) inp.value = raw;
   var v = raw === "" ? null : Math.min(99, parseInt(raw, 10));
   g[inp.dataset.s === "A" ? "scoreA" : "scoreB"] = v;
   save();
-  syncWin(+inp.dataset.g);
+  syncWin(+inp.dataset.r, +inp.dataset.g);
   syncFinish();
 });
 
-function syncGame(i){
-  var cur = curRound();
-  if(!cur) return;
-  var g = cur.games[i];
-  var card = $("pane-play").querySelector('.court[data-g="' + i + '"]');
-  if(!card) return;
+function cardOf(ri, i){
+  return $("pane-play").querySelector('.court[data-r="' + ri + '"][data-g="' + i + '"]');
+}
+function syncGame(ri, i){
+  var r = S.rounds[ri];
+  if(!r) return;
+  var g = r.games[i];
+  var card = cardOf(ri, i);
+  if(!card || !g) return;
   card.querySelectorAll("input[data-s]").forEach(function(inp){
     var v = inp.dataset.s === "A" ? g.scoreA : g.scoreB;
     var want = v == null ? "" : String(v);
     if(inp.value !== want) inp.value = want;
   });
-  syncWin(i);
+  syncWin(ri, i);
 }
-function syncWin(i){
-  var cur = curRound();
-  if(!cur) return;
-  var g = cur.games[i];
-  var card = $("pane-play").querySelector('.court[data-g="' + i + '"]');
-  if(!card) return;
+function syncWin(ri, i){
+  var r = S.rounds[ri];
+  if(!r) return;
+  var g = r.games[i];
+  var card = cardOf(ri, i);
+  if(!card || !g) return;
   var a = card.querySelector('.side[data-side="A"]');
   var b = card.querySelector('.side[data-side="B"]');
   var has = !g.skip && g.scoreA != null && g.scoreB != null && g.scoreA !== g.scoreB;
@@ -1089,14 +1314,51 @@ function syncFinish(){
   btn.disabled = !cur || !cur.games.every(gameFilled);
 }
 
-/* ────────── round completion ────────── */
-function onFinish(){
-  var cur = curRound();
-  if(!cur) return;
-  if(!cur.games.every(gameFilled)){ toast("모든 경기의 점수를 입력해 주세요"); return; }
+/* ────────── 선수 교체 (탭 → 스왑) ────────── */
+function slotOf(r, pid){
+  for(var i=0;i<r.games.length;i++){
+    var g = r.games[i];
+    for(var k=0;k<2;k++){
+      if(g.teamA[k] === pid) return { g:g, team:"teamA", k:k };
+      if(g.teamB[k] === pid) return { g:g, team:"teamB", k:k };
+    }
+  }
+  var j = (r.resting || []).indexOf(pid);
+  return j >= 0 ? { rest:true, k:j } : null;
+}
+function setSlot(r, s, pid){
+  if(s.rest) r.resting[s.k] = pid;
+  else s.g[s.team][s.k] = pid;
+}
+function onNameTap(ri, pid){
+  var r = S.rounds[ri];
+  if(!r || r.locked || !pid) return;
+  if(swapSel && swapSel.ri === ri && swapSel.pid === pid){
+    swapSel = null; renderPlay(); return;      // 같은 선수 다시 탭 = 취소
+  }
+  if(!swapSel || swapSel.ri !== ri){
+    swapSel = { ri:ri, pid:pid };              // 다른 라운드면 선택만 옮긴다
+    renderPlay();
+    return;
+  }
+  var a = swapSel.pid;
+  swapSel = null;
+  var sa = slotOf(r, a), sb = slotOf(r, pid);
+  if(sa && sb){
+    setSlot(r, sa, pid);
+    setSlot(r, sb, a);
+    if(E && E.rebuildHistory) E.rebuildHistory(S);
+    save();
+    toast(nameOf(a) + " ↔ " + nameOf(pid));
+  }
+  renderPlay();
+}
 
+/* ────────── round completion / 점수 수정 ────────── */
+function validateThen(r, run){
+  if(!r.games.every(gameFilled)){ toast("모든 경기의 점수를 입력해 주세요"); return; }
   var errs = [];
-  cur.games.forEach(function(g){
+  r.games.forEach(function(g){
     if(g.skip) return;
     var msg = null;
     try{
@@ -1104,7 +1366,6 @@ function onFinish(){
     }catch(e){ msg = null; }
     if(msg) errs.push("코트 " + g.court + " (" + g.scoreA + ":" + g.scoreB + ") — " + msg);
   });
-
   if(errs.length){
     confirmBox({
       title: "점수를 확인해 주세요",
@@ -1114,35 +1375,53 @@ function onFinish(){
         '시간 제한 경기 등 예외가 있다면 그대로 저장할 수 있습니다.</div>',
       cancelText: "수정하기",
       okText: "그래도 저장"
-    }).then(function(ok){ if(ok) lockAndAdvance(cur); });
+    }).then(function(ok){ if(ok) run(); });
     return;
   }
-  lockAndAdvance(cur);
+  run();
 }
 
-function lockAndAdvance(r){
+function lockRound(r){
   r.games.forEach(function(g){
     if(g.skip){ g.status = "skipped"; g.scoreA = null; g.scoreB = null; }
     else g.status = "done";
   });
   r.locked = true;
+  delete r.editing;
+  swapSel = null;
   save();
+}
 
-  var nn = r.no + 1;
-  var ac = activeCount(nn);
-  if(ac < 4){
+function onFinish(){
+  var cur = curRound();
+  if(!cur) return;
+  validateThen(cur, function(){
+    lockRound(cur);
     render();
-    confirmBox({
-      title: "세션을 종료할까요?",
-      body: "참여 가능한 선수가 " + ac + "명입니다. 복식 경기를 진행할 수 없습니다.",
-      cancelText: "계속 보기",
-      okText: "랭킹 보기"
-    }).then(function(ok){ if(ok){ tab = "rank"; render(); window.scrollTo(0,0); } });
-    return;
-  }
-  if(!clampCourts(nn)){ render(); return; }
-  if(generateRound()) render();
-  else render();
+    var nx = curRound();
+    toast(nx ? cur.no + "라운드 완료 · 다음은 " + nx.no + "라운드" : "모든 라운드를 마쳤습니다");
+  });
+}
+
+/* 완료한 라운드를 다시 연다 (점수·대진 수정 가능) */
+function unlockForEdit(ri){
+  var r = S.rounds[ri];
+  if(!r || !r.locked) return;
+  r.locked = false;
+  r.editing = true;
+  r.games.forEach(function(g){ g.skip = (g.status === "skipped"); });
+  save();
+  renderPlay();
+  toast(r.no + "라운드를 수정할 수 있습니다");
+}
+function onEditDone(ri){
+  var r = S.rounds[ri];
+  if(!r || !isEditing(r)) return;
+  validateThen(r, function(){
+    lockRound(r);
+    render();
+    toast(r.no + "라운드 수정을 저장했습니다");
+  });
 }
 
 /* courts auto-shrink (§5.3) */
@@ -1276,7 +1555,7 @@ function renderSet(){
             }).join("") +
           '</div>' +
           '<p class="hint">현재 참여 ' + activeCount(nn) + '명 → 최대 <b>' + mx + '코트</b>. ' +
-            '변경은 다음 라운드부터 적용됩니다.</p>' +
+            '변경하면 아직 끝나지 않은 라운드의 대진을 다시 만듭니다.</p>' +
         '</div>' +
         '<div class="field">' +
           '<div class="flabel"><span>승점</span><b>' + S.config.winPoint + '점</b></div>' +
@@ -1322,7 +1601,7 @@ function renderSet(){
       '<div class="panel-body">' +
         '<div class="about">' +
           '<div class="ttl">피클볼 오픈플레이 로테이션</div>' +
-          '<div class="ver">버전 2.0.0</div>' +
+          '<div class="ver">버전 2.1.0</div>' +
           '<dl>' +
             '<dt>만든 사람</dt><dd>David Doyun Lee</dd>' +
             '<dt>문의</dt><dd><a href="mailto:doyundoyun@gmail.com?subject=%ED%94%BC%ED%81%B4%EB%B3%BC%20%EB%A1%9C%ED%85%8C%EC%9D%B4%EC%85%98%20%EB%AC%B8%EC%9D%98">doyundoyun@gmail.com</a></dd>' +
@@ -1369,8 +1648,9 @@ function wireSet(){
     var c = +v;
     if(c > mx){ toast("현재 인원으로는 최대 " + mx + "코트입니다"); renderSet(); return; }
     S.config.courts = c; save();
-    toast("코트 " + c + "면 · 다음 라운드부터 적용");
-    renderSet();
+    regenerateUnlocked();
+    toast("코트 " + c + "면 · 남은 라운드 대진을 다시 만들었습니다", 2800);
+    render();
   });
   segLocal(pane, "stWin", function(v){ S.config.winPoint = +v; save(); renderSet(); });
   segLocal(pane, "stBy2", function(v){ S.config.winBy2 = v === "1"; save(); renderSet(); });
@@ -1419,6 +1699,7 @@ function addPlayer(){
       joinedRound: joinAt, leftRound: null, active: true
     });
     save();
+    regenerateUnlocked();
     render();
     toast(name + " 합류 · " + joinAt + "라운드부터 배정됩니다", 3000);
   });
@@ -1442,7 +1723,9 @@ function playerMenu(pid){
       return;
     }
     if(k === "undo"){
-      p.leftRound = null; save(); render(); toast(p.name + " 복귀 처리했습니다");
+      p.leftRound = null; save();
+      regenerateUnlocked();
+      render(); toast(p.name + " 복귀 처리했습니다");
       return;
     }
     if(k !== "leave") return;
@@ -1466,12 +1749,15 @@ function playerMenu(pid){
       p.leftRound = leaveAt;
       save();
       var mx = maxCourtsFor(leaveAt);
+      var shrank = false;
       if(mx >= 1 && S.config.courts > mx){
         S.config.courts = mx; save();
-        toast("인원이 줄어 코트를 " + mx + "면으로 조정했습니다", 2800);
-      }else{
-        toast(p.name + " 조퇴 · " + leaveAt + "라운드부터 제외됩니다", 2800);
+        shrank = true;
       }
+      regenerateUnlocked();
+      toast(shrank
+        ? "인원이 줄어 코트를 " + mx + "면으로 조정했습니다"
+        : p.name + " 조퇴 · " + leaveAt + "라운드부터 제외됩니다", 2800);
       render();
     });
   });
@@ -1774,7 +2060,6 @@ if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
 window.__app = {
   get session(){ return S; },
   render: render,
-  roundText: roundText,
   finalText: finalText
 };
 })();
