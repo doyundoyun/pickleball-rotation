@@ -444,6 +444,10 @@ details.pr.edit{border-color:var(--court)}
   padding:3px 8px;border:1.5px solid var(--court);color:var(--court);white-space:nowrap;
 }
 .bk-s.na{color:var(--dim);border-color:var(--rule);border-style:dashed}
+.bk-note{
+  padding:7px 10px;border-top:1.5px solid var(--rule);background:rgba(19,89,94,.08);
+  font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--court);
+}
 .bk-rest{padding:7px 10px;border-top:1.5px dashed var(--rule);font-size:12px;color:var(--dim)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:3px solid var(--court);outline-offset:2px}
@@ -603,7 +607,7 @@ details.pr.edit{border-color:var(--court)}
 <script src="engine.js"></script>
 <script>
 /*!
- * 피클볼 오픈플레이 로테이션 v2.2.0 — app
+ * 피클볼 오픈플레이 로테이션 v2.2.1 — app
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com> · MIT License
  */
 (function(){
@@ -1660,7 +1664,7 @@ function renderSet(){
       '<div class="panel-body">' +
         '<div class="about">' +
           '<div class="ttl">피클볼 오픈플레이 로테이션</div>' +
-          '<div class="ver">버전 2.2.0</div>' +
+          '<div class="ver">버전 2.2.1</div>' +
           '<dl>' +
             '<dt>만든 사람</dt><dd>David Doyun Lee</dd>' +
             '<dt>문의</dt><dd><a href="mailto:doyundoyun@gmail.com?subject=%ED%94%BC%ED%81%B4%EB%B3%BC%20%EB%A1%9C%ED%85%8C%EC%9D%B4%EC%85%98%20%EB%AC%B8%EC%9D%98">doyundoyun@gmail.com</a></dd>' +
@@ -1935,11 +1939,25 @@ function roundState(r, i){
   if(isEditing(r)) return "수정 중";
   return i === curIndex() ? "진행중" : "예정";
 }
+/* 이 라운드부터 명단이 바뀐 사람 (합류 / 조퇴) */
+function rosterChange(no){
+  var joined = [], left = [];
+  S.players.forEach(function(p){
+    if(no > 1 && (p.joinedRound || 1) === no) joined.push(p.name);
+    if(p.leftRound === no) left.push(p.name);
+  });
+  var out = [];
+  if(joined.length) out.push("합류 " + joined.join(", "));
+  if(left.length) out.push("조퇴 " + left.join(", "));
+  return out.join("  ·  ");
+}
+
 function bracketData(){
   return S.rounds.map(function(r, i){
     return {
       no: r.no,
       state: roundState(r, i),
+      note: rosterChange(r.no),
       games: r.games.map(function(g){
         var o = {
           court: g.court || 0,
@@ -1963,7 +1981,10 @@ function bracketData(){
 }
 function bracketMeta(){
   var locked = S.rounds.filter(function(r){ return r.locked; }).length;
-  return S.players.length + "명 · " + S.config.courts + "코트 · 총 " + S.rounds.length +
+  var reg = S.players.length;
+  var now = activeCount(nextRoundNo());
+  var who = now === reg ? reg + "명" : now + "명(등록 " + reg + ")";
+  return who + " · " + S.config.courts + "코트 · 총 " + S.rounds.length +
     "라운드 (완료 " + locked + ")";
 }
 
@@ -1974,6 +1995,7 @@ function bracketHTML(){
     d.map(function(r){
       return '<div class="bk-r' + (r.state === "완료" ? " done" : "") + '">' +
         '<div class="bk-h">ROUND ' + r.no + '<em>' + esc(r.state) + '</em></div>' +
+        (r.note ? '<div class="bk-note">' + esc(r.note) + '</div>' : "") +
         r.games.map(function(g){
           return '<div class="bk-g">' +
             '<span class="bk-c">C' + g.court + '</span>' +
@@ -1992,6 +2014,7 @@ function bracketText(){
   var s = "🏓 오픈플레이 대진표\n" + longDate(S.date) + " · " + bracketMeta() + "\n";
   d.forEach(function(r){
     s += "\n[R" + r.no + "] " + r.state + "\n";
+    if(r.note) s += "* " + r.note + "\n";
     r.games.forEach(function(g){
       s += "C" + g.court + "  " + g.a + "  " + g.sc + "  " + g.b + "\n";
     });
@@ -2037,11 +2060,12 @@ function drawBracketCanvas(){
   if(!d.length) return null;
 
   var PAD = 56, COLW = 940, GAP = 44;
-  var HEADH = 52, ROWH = 66, RESTH = 48, BLKGAP = 22;
+  var HEADH = 52, NOTEH = 42, ROWH = 66, RESTH = 48, BLKGAP = 22;
   var HH = 200, FH = 92;
 
   var blocks = d.map(function(r){
-    return { r: r, h: HEADH + r.games.length * ROWH + (r.rest.length ? RESTH : 0) };
+    return { r: r, h: HEADH + (r.note ? NOTEH : 0) +
+      r.games.length * ROWH + (r.rest.length ? RESTH : 0) };
   });
   var total = blocks.reduce(function(a, b){ return a + b.h + BLKGAP; }, 0);
   var cols = Math.min(3, Math.max(1, Math.ceil(total / 2400)));
@@ -2091,7 +2115,7 @@ function drawBracketCanvas(){
     var lx = PAD + li * (COLW + GAP);
     var y = HH + 38;
     lane.items.forEach(function(b){
-      y = drawBracketBlock(x, b.r, lx, y, COLW, HEADH, ROWH, RESTH) + BLKGAP;
+      y = drawBracketBlock(x, b.r, lx, y, COLW, HEADH, NOTEH, ROWH, RESTH) + BLKGAP;
     });
   });
 
@@ -2123,9 +2147,10 @@ function nameFont(x, text, maxW, bold){
   }
 }
 
-function drawBracketBlock(x, r, bx, by, w, headH, rowh, resth){
+function drawBracketBlock(x, r, bx, by, w, headH, noteh, rowh, resth){
   var done = r.state === "완료";
-  var h = headH + r.games.length * rowh + (r.rest.length ? resth : 0);
+  var noteH = r.note ? noteh : 0;
+  var h = headH + noteH + r.games.length * rowh + (r.rest.length ? resth : 0);
 
   x.fillStyle = "#F5F7F2"; x.fillRect(bx, by, w, h);
   x.strokeStyle = done ? "#CDD5D2" : "#0C1F26";
@@ -2145,7 +2170,16 @@ function drawBracketBlock(x, r, bx, by, w, headH, rowh, resth){
   x.font = "600 22px " + CFONT;
   x.fillText(r.state, bx + w - 20, by + headH / 2 + 2);
 
-  var ay = by + headH;
+  if(r.note){
+    var ny = by + headH;
+    x.fillStyle = "#DCE7E6"; x.fillRect(bx + 3, ny, w - 6, noteH);
+    x.textAlign = "left"; x.textBaseline = "middle";
+    x.fillStyle = "#13595E";
+    x.font = "700 22px " + CFONT;
+    x.fillText(fit(x, r.note, w - 44), bx + 20, ny + noteH / 2);
+  }
+
+  var ay = by + headH + noteH;
 
   /* 점수 칸을 가운데 두고, 남는 폭을 좌우 팀 이름이 절반씩 나눠 쓴다 */
   var scoreW = 0;
