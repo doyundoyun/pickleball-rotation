@@ -1,11 +1,11 @@
 /*!
- * 피클볼 오픈플레이 로테이션 v2.1.0
+ * 피클볼 오픈플레이 로테이션 v2.2.0
  * 복식 오픈플레이 대진 배정 · 점수 기록 · 순위 집계
  *
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com>
  * MIT License
  */
-const CACHE = "pb-v2.1.0";   // 배포마다 버전 올릴 것
+const CACHE = "pb-v2.2.0";   // 배포마다 버전 올릴 것
 const ASSETS = ["./", "./index.html", "./engine.js", "./manifest.json",
                 "./icons/icon-192.png", "./icons/icon-512.png"];
 

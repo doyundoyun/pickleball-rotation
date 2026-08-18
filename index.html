@@ -73,7 +73,7 @@ button{font:inherit;color:inherit}
   font-family:var(--mono);font-size:10px;letter-spacing:.22em;
   text-transform:uppercase;opacity:.7;margin-bottom:2px;
 }
-.hd-date{font-family:var(--display);font-weight:800;font-size:23px;line-height:1;letter-spacing:.01em}
+.hd-date{font-family:var(--display);font-weight:800;font-size:clamp(17px,5vw,23px);line-height:1.05;letter-spacing:.01em}
 .hd-r{text-align:right;flex:none}
 .hd-rno{font-family:var(--display);font-weight:800;font-size:29px;line-height:.9;color:var(--ball)}
 .hd-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;opacity:.7}
@@ -410,6 +410,41 @@ details.pr.edit{border-color:var(--court)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
 .rwrap{display:flex;align-items:center;gap:10px}
 .rwrap .hint{margin:0}
+/* ══ v2.2 전체 대진표 ══ */
+.round-tag .expander{order:3;flex:none;margin-left:2px}
+.round-tag::after{order:2}
+.expander{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;
+  border:1.5px solid var(--court);color:var(--court);background:transparent;
+  padding:7px 10px;min-height:34px;cursor:pointer;
+}
+.expander[aria-pressed="true"]{background:var(--court);color:var(--line)}
+.mdl.wide{max-width:min(680px,94vw);max-height:88vh;display:flex;flex-direction:column}
+.mdl.wide .mdl-b{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:13px}
+.bk-meta{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);
+  margin:0 0 12px;line-height:1.6;
+}
+.bk-r{border:2px solid var(--ink);background:var(--line);margin-bottom:10px}
+.bk-r.done{border-color:var(--rule)}
+.bk-h{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;
+  background:var(--ink);color:var(--ball);
+  font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;
+}
+.bk-r.done .bk-h{background:var(--rule);color:var(--ink)}
+.bk-h em{margin-left:auto;font-style:normal;font-size:10px;opacity:.85;letter-spacing:.1em}
+.bk-g{display:flex;align-items:center;gap:7px;padding:9px 10px;border-top:1.5px solid var(--rule)}
+.bk-c{font-family:var(--mono);font-size:10px;color:var(--dim);flex:none;width:20px}
+.bk-t{flex:1;min-width:0;font-family:var(--kr);font-size:14px;line-height:1.3;overflow-wrap:anywhere}
+.bk-t.rt{text-align:right}
+.bk-t.w{font-weight:800}
+.bk-s{
+  flex:none;font-family:var(--mono);font-size:13px;font-weight:600;
+  padding:3px 8px;border:1.5px solid var(--court);color:var(--court);white-space:nowrap;
+}
+.bk-s.na{color:var(--dim);border-color:var(--rule);border-style:dashed}
+.bk-rest{padding:7px 10px;border-top:1.5px dashed var(--rule);font-size:12px;color:var(--dim)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:3px solid var(--court);outline-offset:2px}
 </style>
@@ -568,7 +603,7 @@ details.pr.edit{border-color:var(--court)}
 <script src="engine.js"></script>
 <script>
 /*!
- * 피클볼 오픈플레이 로테이션 v2.1.0 — app
+ * 피클볼 오픈플레이 로테이션 v2.2.0 — app
  * (c) 2026 David Doyun Lee <doyundoyun@gmail.com> · MIT License
  */
 (function(){
@@ -715,6 +750,10 @@ function ymd(d){ return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad
 function shortDate(iso){
   var p = String(iso || "").split("-");
   return p.length === 3 ? (+p[1]) + "/" + (+p[2]) : (iso || "");
+}
+function longDate(iso){
+  var p = String(iso || "").split("-");
+  return p.length === 3 ? p[0] + "." + pad2(+p[1]) + "." + pad2(+p[2]) : (iso || "");
 }
 function nameOf(id){
   for(var i=0;i<S.players.length;i++) if(S.players[i].id === id) return S.players[i].name;
@@ -1012,7 +1051,7 @@ function render(){
 }
 
 function renderHeader(){
-  $("hdDate").textContent = shortDate(S.date) + " 세션";
+  $("hdDate").textContent = longDate(S.date) + " 세션";
   var cur = curRound();
   if(cur){
     $("hdRound").textContent = "R" + cur.no;
@@ -1039,6 +1078,9 @@ function renderPlay(){
   var cur = ci < 0 ? null : S.rounds[ci];
   var html = "";
 
+  html += '<div class="btnrow" style="margin-bottom:15px">' +
+    '<button type="button" class="btn" data-act="bracket">전체 대진표 보기</button></div>';
+
   if(cur){
     html += '<div class="round-tag"><span>Round ' + cur.no + '</span><em>진행중</em></div>';
     html += roundBodyHTML(cur, ci);
@@ -1062,7 +1104,7 @@ function renderPlay(){
   S.rounds.forEach(function(r, i){ if(isPending(r) && i !== ci) fut.push(i); });
   if(fut.length){
     html += '<div class="past"><div class="round-tag"><span>예정 라운드</span><em>' +
-      fut.length + '개</em></div>' +
+      fut.length + '개</em>' + expanderHTML() + '</div>' +
       fut.map(function(i){ return futureHTML(S.rounds[i], i); }).join("") + '</div>';
   }
 
@@ -1070,7 +1112,7 @@ function renderPlay(){
   S.rounds.forEach(function(r, i){ if(r.locked || isEditing(r)) past.push(i); });
   past.reverse();
   if(past.length){
-    html += '<div class="past"><div class="round-tag"><span>지난 라운드</span></div>' +
+    html += '<div class="past"><div class="round-tag"><span>지난 라운드</span>' + expanderHTML() + '</div>' +
       past.map(function(i){
         var r = S.rounds[i];
         return isEditing(r) ? editHTML(r, i) : pastHTML(r, i);
@@ -1099,6 +1141,18 @@ function renderPlay(){
       else toast("라운드를 생성할 수 없습니다");
     };
   }
+}
+
+function expanderHTML(){
+  return '<button type="button" class="expander" data-act="expand" aria-pressed="false">모두 펼치기</button>';
+}
+function toggleExpand(btn){
+  var wrap = btn.closest(".past");
+  if(!wrap) return;
+  var on = btn.getAttribute("aria-pressed") !== "true";
+  wrap.querySelectorAll("details[data-rno]").forEach(function(d){ d.open = on; });
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.textContent = on ? "모두 접기" : "모두 펼치기";
 }
 
 /* <details> 펼침 상태를 라운드 번호 기준으로 보존한다 */
@@ -1222,6 +1276,10 @@ $("pane-play").addEventListener("click", function(e){
   var b = e.target.closest("[data-act]");
   if(!b) return;
   var act = b.dataset.act;
+
+  if(act === "bracket"){ openBracket(); return; }
+  if(act === "expand"){ toggleExpand(b); return; }
+
   var ri = +b.dataset.r;
   var r = S.rounds[ri];
   if(!r) return;
@@ -1588,6 +1646,7 @@ function renderSet(){
     '<section class="panel">' +
       '<div class="panel-head"><div class="panel-title">세션</div></div>' +
       '<div class="panel-body">' +
+        '<button type="button" class="btn full" id="bracketBtn" style="margin-bottom:9px">전체 대진표 보기 · 공유</button>' +
         '<div class="btnrow">' +
           '<button type="button" class="btn" id="shareTxt2">결과 공유</button>' +
           '<button type="button" class="btn dang" id="endSess">세션 종료 · 새 세션</button>' +
@@ -1601,7 +1660,7 @@ function renderSet(){
       '<div class="panel-body">' +
         '<div class="about">' +
           '<div class="ttl">피클볼 오픈플레이 로테이션</div>' +
-          '<div class="ver">버전 2.1.0</div>' +
+          '<div class="ver">버전 2.2.0</div>' +
           '<dl>' +
             '<dt>만든 사람</dt><dd>David Doyun Lee</dd>' +
             '<dt>문의</dt><dd><a href="mailto:doyundoyun@gmail.com?subject=%ED%94%BC%ED%81%B4%EB%B3%BC%20%EB%A1%9C%ED%85%8C%EC%9D%B4%EC%85%98%20%EB%AC%B8%EC%9D%98">doyundoyun@gmail.com</a></dd>' +
@@ -1656,6 +1715,7 @@ function wireSet(){
   segLocal(pane, "stBy2", function(v){ S.config.winBy2 = v === "1"; save(); renderSet(); });
   segLocal(pane, "stBal", function(v){ S.config.balanceWeight = parseFloat(v); save(); renderSet(); });
 
+  pane.querySelector("#bracketBtn").onclick = openBracket;
   pane.querySelector("#shareTxt2").onclick = function(){
     shareText(finalText(getRanks())).then(reportShare);
   };
@@ -1817,7 +1877,7 @@ function rankLines(rows, limit){
   }).join("\n");
 }
 function finalText(rows){
-  var s = "🏓 오픈플레이 " + shortDate(S.date) + " 최종 결과\n";
+  var s = "🏓 오픈플레이 " + longDate(S.date) + " 최종 결과\n";
   s += "총 " + S.rounds.filter(function(r){ return r.locked; }).length + "라운드 · " +
     S.players.length + "명\n\n── 순위 ──\n";
   s += rankLines(rows);
@@ -1865,6 +1925,270 @@ function taCopy(text){
     ta.remove();
     return ok;
   }catch(e){ return false; }
+}
+
+/* ══════════════════════════════════════════
+   §12.3 전체 대진표 — 한 화면 보기 · 텍스트/이미지 공유
+   ══════════════════════════════════════════ */
+function roundState(r, i){
+  if(r.locked) return "완료";
+  if(isEditing(r)) return "수정 중";
+  return i === curIndex() ? "진행중" : "예정";
+}
+function bracketData(){
+  return S.rounds.map(function(r, i){
+    return {
+      no: r.no,
+      state: roundState(r, i),
+      games: r.games.map(function(g){
+        var o = {
+          court: g.court || 0,
+          a: teamNames(g.teamA),
+          b: teamNames(g.teamB),
+          aw: false, bw: false, na: true
+        };
+        if(g.skip || g.status === "skipped") o.sc = "기록 안 함";
+        else if(g.scoreA == null || g.scoreB == null) o.sc = "vs";
+        else {
+          o.sc = g.scoreA + " : " + g.scoreB;
+          o.aw = g.scoreA > g.scoreB;
+          o.bw = g.scoreB > g.scoreA;
+          o.na = false;
+        }
+        return o;
+      }),
+      rest: (r.resting || []).map(nameOf)
+    };
+  });
+}
+function bracketMeta(){
+  var locked = S.rounds.filter(function(r){ return r.locked; }).length;
+  return S.players.length + "명 · " + S.config.courts + "코트 · 총 " + S.rounds.length +
+    "라운드 (완료 " + locked + ")";
+}
+
+function bracketHTML(){
+  var d = bracketData();
+  if(!d.length) return '<p class="bk-meta">아직 생성된 라운드가 없습니다.</p>';
+  return '<p class="bk-meta">' + esc(longDate(S.date)) + ' 세션<br>' + esc(bracketMeta()) + '</p>' +
+    d.map(function(r){
+      return '<div class="bk-r' + (r.state === "완료" ? " done" : "") + '">' +
+        '<div class="bk-h">ROUND ' + r.no + '<em>' + esc(r.state) + '</em></div>' +
+        r.games.map(function(g){
+          return '<div class="bk-g">' +
+            '<span class="bk-c">C' + g.court + '</span>' +
+            '<span class="bk-t' + (g.aw ? " w" : "") + '">' + esc(g.a) + '</span>' +
+            '<span class="bk-s' + (g.na ? " na" : "") + '">' + esc(g.sc) + '</span>' +
+            '<span class="bk-t rt' + (g.bw ? " w" : "") + '">' + esc(g.b) + '</span>' +
+          '</div>';
+        }).join("") +
+        (r.rest.length ? '<div class="bk-rest">대기 · ' + esc(r.rest.join(", ")) + '</div>' : "") +
+      '</div>';
+    }).join("");
+}
+
+function bracketText(){
+  var d = bracketData();
+  var s = "🏓 오픈플레이 대진표\n" + longDate(S.date) + " · " + bracketMeta() + "\n";
+  d.forEach(function(r){
+    s += "\n[R" + r.no + "] " + r.state + "\n";
+    r.games.forEach(function(g){
+      s += "C" + g.court + "  " + g.a + "  " + g.sc + "  " + g.b + "\n";
+    });
+    if(r.rest.length) s += "대기: " + r.rest.join(", ") + "\n";
+  });
+  s += "\n피클볼 오픈플레이 로테이션";
+  return s;
+}
+
+function openBracket(){
+  var html =
+    '<div class="mdl wide">' +
+      '<div class="mdl-h">전체 대진표</div>' +
+      '<div class="mdl-b">' + bracketHTML() + '</div>' +
+      '<div class="mdl-f col">' +
+        '<button type="button" data-k="img" class="pri">이미지로 저장 · 공유</button>' +
+        '<button type="button" data-k="txt">텍스트 복사 (카톡 붙여넣기)</button>' +
+        '<button type="button" data-k="">닫기</button>' +
+      '</div>' +
+    '</div>';
+  openModal(html, function(m){
+    m.querySelectorAll("[data-k]").forEach(function(b){
+      b.onclick = function(){ closeModal(b.dataset.k || null); };
+    });
+  }).then(function(k){
+    if(k === "img") shareBracketImage();
+    else if(k === "txt") shareText(bracketText()).then(reportShare);
+  });
+}
+
+function shareBracketImage(){
+  if(!S.rounds.length){ toast("공유할 대진표가 없습니다"); return; }
+  var cv;
+  try{ cv = drawBracketCanvas(); }
+  catch(e){ console.error(e); toast("이미지 생성에 실패했습니다"); return; }
+  if(!cv){ toast("공유할 대진표가 없습니다"); return; }
+  emitImage(cv, "대진표_" + S.date + ".png", "rotation-bracket.png", "오픈플레이 대진표");
+}
+
+/* 라운드가 많으면 2~3열로 나눠 담는다 (세로로만 길어지면 카톡에서 읽기 어렵다) */
+function drawBracketCanvas(){
+  var d = bracketData();
+  if(!d.length) return null;
+
+  var PAD = 56, COLW = 940, GAP = 44;
+  var HEADH = 52, ROWH = 66, RESTH = 48, BLKGAP = 22;
+  var HH = 200, FH = 92;
+
+  var blocks = d.map(function(r){
+    return { r: r, h: HEADH + r.games.length * ROWH + (r.rest.length ? RESTH : 0) };
+  });
+  var total = blocks.reduce(function(a, b){ return a + b.h + BLKGAP; }, 0);
+  var cols = Math.min(3, Math.max(1, Math.ceil(total / 2400)));
+  var target = total / cols;
+
+  var lanes = [], cur = [], curH = 0;
+  blocks.forEach(function(b){
+    if(lanes.length < cols - 1 && curH > 0 && curH + b.h + BLKGAP > target * 1.06){
+      lanes.push({ items: cur, h: curH }); cur = []; curH = 0;
+    }
+    cur.push(b); curH += b.h + BLKGAP;
+  });
+  lanes.push({ items: cur, h: curH });
+  while(lanes.length < cols) lanes.push({ items: [], h: 0 });
+
+  var bodyH = lanes.reduce(function(a, l){ return Math.max(a, l.h); }, 0);
+  var W = PAD * 2 + cols * COLW + (cols - 1) * GAP;
+  var H = HH + 38 + bodyH + FH;
+
+  var cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  var x = cv.getContext("2d");
+
+  x.fillStyle = "#E7EAE4"; x.fillRect(0, 0, W, H);
+
+  // header band
+  x.fillStyle = "#13595E"; x.fillRect(0, 0, W, HH);
+  x.fillStyle = "#0C1F26"; x.fillRect(0, HH, W, 8);
+
+  x.textBaseline = "alphabetic"; x.textAlign = "left";
+  x.fillStyle = "rgba(255,255,255,.72)";
+  x.font = "600 24px " + CFONT;
+  x.fillText("PICKLEBALL  ·  OPEN PLAY", PAD, 70);
+  x.fillStyle = "#FFFFFF";
+  x.font = "800 58px " + CFONT;
+  x.fillText("오픈플레이 대진표", PAD, 138);
+
+  x.textAlign = "right";
+  x.fillStyle = "#DFFF4F";
+  x.font = "700 34px " + CFONT;
+  x.fillText(longDate(S.date), W - PAD, 92);
+  x.fillStyle = "rgba(255,255,255,.78)";
+  x.font = "600 24px " + CFONT;
+  x.fillText(bracketMeta(), W - PAD, 136);
+
+  lanes.forEach(function(lane, li){
+    var lx = PAD + li * (COLW + GAP);
+    var y = HH + 38;
+    lane.items.forEach(function(b){
+      y = drawBracketBlock(x, b.r, lx, y, COLW, HEADH, ROWH, RESTH) + BLKGAP;
+    });
+  });
+
+  // footer
+  x.fillStyle = "#0C1F26"; x.fillRect(0, H - FH, W, FH);
+  x.fillStyle = "#DFFF4F";
+  x.beginPath(); x.arc(72, H - 46, 20, 0, 7); x.fill();
+  x.fillStyle = "#0C1F26";
+  [[-1,-1],[1,-1],[-1,1],[1,1],[0,0]].forEach(function(p){
+    x.beginPath(); x.arc(72 + p[0]*7.5, H - 46 + p[1]*7.5, 2.6, 0, 7); x.fill();
+  });
+  x.fillStyle = "#FFFFFF";
+  x.font = "600 26px " + CFONT;
+  x.textAlign = "left"; x.textBaseline = "alphabetic";
+  x.fillText("피클볼 오픈플레이 로테이션", 108, H - 37);
+  x.fillStyle = "rgba(255,255,255,.55)";
+  x.textAlign = "right";
+  x.fillText(longDate(S.date), W - PAD, H - 37);
+
+  return cv;
+}
+
+/* 이름이 길면 27px에서 17px까지 줄여 잘림을 피한다 */
+function nameFont(x, text, maxW, bold){
+  var wt = bold ? "800 " : "500 ";
+  for(var px = 27; px >= 17; px -= 2){
+    x.font = wt + px + "px " + CFONT;
+    if(x.measureText(text).width <= maxW) return;
+  }
+}
+
+function drawBracketBlock(x, r, bx, by, w, headH, rowh, resth){
+  var done = r.state === "완료";
+  var h = headH + r.games.length * rowh + (r.rest.length ? resth : 0);
+
+  x.fillStyle = "#F5F7F2"; x.fillRect(bx, by, w, h);
+  x.strokeStyle = done ? "#CDD5D2" : "#0C1F26";
+  x.lineWidth = 3;
+  x.strokeRect(bx + 1.5, by + 1.5, w - 3, h - 3);
+
+  x.fillStyle = done ? "#CDD5D2" : "#0C1F26";
+  x.fillRect(bx + 3, by + 3, w - 6, headH - 3);
+
+  x.textBaseline = "middle";
+  x.textAlign = "left";
+  x.fillStyle = done ? "#0C1F26" : "#DFFF4F";
+  x.font = "800 28px " + CFONT;
+  x.fillText("ROUND " + r.no, bx + 20, by + headH / 2 + 2);
+  x.textAlign = "right";
+  x.fillStyle = done ? "#4A5A5C" : "rgba(255,255,255,.82)";
+  x.font = "600 22px " + CFONT;
+  x.fillText(r.state, bx + w - 20, by + headH / 2 + 2);
+
+  var ay = by + headH;
+
+  /* 점수 칸을 가운데 두고, 남는 폭을 좌우 팀 이름이 절반씩 나눠 쓴다 */
+  var scoreW = 0;
+  r.games.forEach(function(g){
+    x.font = (g.na ? "600 21px " : "800 27px ") + CFONT;
+    scoreW = Math.max(scoreW, x.measureText(g.sc).width);
+  });
+  var nameW = Math.max(160, (w - 84 - scoreW - 48) / 2);
+
+  r.games.forEach(function(g, i){
+    var cy = ay + i * rowh + rowh / 2;
+    if(i > 0){ x.fillStyle = "#E1E6E0"; x.fillRect(bx + 16, ay + i * rowh, w - 32, 2); }
+
+    x.textAlign = "left";
+    x.fillStyle = "#8A9694";
+    x.font = "600 20px " + CFONT;
+    x.fillText("C" + g.court, bx + 18, cy);
+
+    x.fillStyle = "#0C1F26";
+    nameFont(x, g.a, nameW, g.aw);
+    x.fillText(fit(x, g.a, nameW), bx + 64, cy);
+
+    x.textAlign = "right";
+    nameFont(x, g.b, nameW, g.bw);
+    x.fillText(fit(x, g.b, nameW), bx + w - 20, cy);
+
+    x.textAlign = "center";
+    if(g.na){ x.fillStyle = "#8A9694"; x.font = "600 21px " + CFONT; }
+    else { x.fillStyle = "#13595E"; x.font = "800 27px " + CFONT; }
+    x.fillText(g.sc, bx + w / 2, cy);
+  });
+
+  if(r.rest.length){
+    var ry = ay + r.games.length * rowh;
+    x.fillStyle = "#E1E6E0"; x.fillRect(bx + 16, ry, w - 32, 2);
+    x.textAlign = "left";
+    x.fillStyle = "#6B7B7E";
+    x.font = "600 21px " + CFONT;
+    x.fillText(fit(x, "대기 · " + r.rest.join(", "), w - 44), bx + 20, ry + resth / 2);
+  }
+
+  x.textBaseline = "alphabetic";
+  return by + h;
 }
 
 /* ══════════════════════════════════════════
@@ -1992,14 +2316,17 @@ function shareImage(rows){
   var cv;
   try{ cv = drawResultCanvas(rows); }
   catch(e){ console.error(e); toast("이미지 생성에 실패했습니다"); return; }
+  emitImage(cv, "피클볼_" + S.date + ".png", "rotation-result.png", "오픈플레이 결과");
+}
 
-  var fname = "피클볼_" + S.date + ".png";
+/* canvas → 공유 시트(가능하면) → 다운로드 */
+function emitImage(cv, fname, shareName, title){
   var done = function(blob){
     if(!blob){ toast("이미지 생성에 실패했습니다"); return; }
     var file = null;
-    try{ file = new File([blob], "rotation-result.png", { type: "image/png" }); }catch(e){}
+    try{ file = new File([blob], shareName, { type: "image/png" }); }catch(e){}
     if(file && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share){
-      navigator.share({ files: [file], title: "오픈플레이 결과" })
+      navigator.share({ files: [file], title: title })
         .catch(function(err){
           if(err && err.name === "AbortError") return;
           download(blob, fname);
@@ -2008,7 +2335,6 @@ function shareImage(rows){
     }
     download(blob, fname);
   };
-
   if(cv.toBlob) cv.toBlob(done, "image/png");
   else done(dataURLtoBlob(cv.toDataURL("image/png")));
 }
@@ -2060,7 +2386,9 @@ if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
 window.__app = {
   get session(){ return S; },
   render: render,
-  finalText: finalText
+  finalText: finalText,
+  bracketText: bracketText,
+  drawBracket: drawBracketCanvas
 };
 })();
 </script>
